@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Sky Hopper</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
+    background: #4ec0e8;
+    font-family: 'Trebuchet MS', Arial, sans-serif;
+    touch-action: manipulation;
+  }
+  #gameCanvas {
+    display: block;
+    margin: 0 auto;
+    background: linear-gradient(#7ec9f2, #a8dcf0);
+    touch-action: manipulation;
+  }
+  #wrap {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="gameCanvas" width="400" height="600"></canvas>
+</div>
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+// ---- Game state ----
+let state = 'start'; // start, playing, over
+let frame = 0;
+let score = 0;
+let highScore = 0;
+try { highScore = parseInt(localStorage.getItem('skyHopperHigh') || '0', 10); } catch(e) {}
+
+// ---- Bird ----
+const bird = {
+  x: 90, y: H/2, r: 16,
+  vy: 0,
+  gravity: 0.45,
+  flapPower: -7.5,
+  rotation: 0
+};
+
+// ---- Pipes ----
+let pipes = [];
+const pipeWidth = 60;
+let gapSize = 165;
+let pipeSpeed = 2.6;
+const pipeSpacing = 210;
+
+// ---- Clouds (decor) ----
+let clouds = [];
+for (let i = 0; i < 5; i++) {
+  clouds.push({ x: Math.random()*W, y: 40 + Math.random()*180, s: 0.6 + Math.random()*0.8, speed: 0.3 + Math.random()*0.4 });
+}
+
+function resetGame() {
+  bird.y = H/2; bird.vy = 0; bird.rotation = 0;
+  pipes = [];
+  score = 0;
+  frame = 0;
+  gapSize = 165;
+  pipeSpeed = 2.6;
+  spawnPipe();
+}
+
+function spawnPipe() {
+  const margin = 70;
+  const gapY = margin + Math.random() * (H - margin*2 - gapSize - 90);
+  pipes.push({ x: W + 20, gapY: gapY, passed: false });
+}
+
+function flap() {
+  if (state === 'start') {
+    state = 'playing';
+    resetGame();
+    bird.vy = bird.flapPower;
+  } else if (state === 'playing') {
+    bird.vy = bird.flapPower;
+  } else if (state === 'over') {
+    state = 'start';
+  }
+}
+
+// Input
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); flap(); }
+});
+canvas.addEventListener('mousedown', flap);
+canvas.addEventListener('touchstart', (e) => { e.preventDefault(); flap(); }, { passive: false });
+
+// ---- Drawing helpers ----
+function drawBackground() {
+  // sky gradient already via CSS bg; draw clouds
+  ctx.save();
+  clouds.forEach(c => {
+    ctx.beginPath();
+    ctx.globalAlpha = 0.8;
+    ctx.fillStyle = '#ffffff';
+    ctx.ellipse(c.x, c.y, 28*c.s, 16*c.s, 0, 0, Math.PI*2);
+    ctx.ellipse(c.x+20*c.s, c.y+6*c.s, 20*c.s, 12*c.s, 0, 0, Math.PI*2);
+    ctx.ellipse(c.x-20*c.s, c.y+6*c.s, 20*c.s, 12*c.s, 0, 0, Math.PI*2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function updateClouds() {
+  clouds.forEach(c => {
+    c.x -= c.speed;
+    if (c.x < -60) { c.x = W + 60; c.y = 40 + Math.random()*180; }
+  });
+}
+
+function drawGround() {
+  ctx.fillStyle = '#deb887';
+  ctx.fillRect(0, H-40, W, 40);
+  ctx.fillStyle = '#8fbf3f';
+  ctx.fillRect(0, H-46, W, 10);
+}
+
+function drawBird() {
+  ctx.save();
+  ctx.translate(bird.x, bird.y);
+  ctx.rotate(bird.rotation);
+  // body
+  ctx.fillStyle = '#ffd23f';
+  ctx.beginPath();
+  ctx.arc(0, 0, bird.r, 0, Math.PI*2);
+  ctx.fill();
+  // wing
+  ctx.fillStyle = '#f2a900';
+  const wingFlap = Math.sin(frame * 0.3) * 6;
+  ctx.beginPath();
+  ctx.ellipse(-4, 2 + wingFlap*0.2, 10, 6, 0.3, 0, Math.PI*2);
+  ctx.fill();
+  // eye
+  ctx.fillStyle = '#333';
+  ctx.beginPath();
+  ctx.arc(7, -5, 2.5, 0, Math.PI*2);
+  ctx.fill();
+  // beak
+  ctx.fillStyle = '#ff7a3d';
+  ctx.beginPath();
+  ctx.moveTo(bird.r-2, -2);
+  ctx.lineTo(bird.r+10, 2);
+  ctx.lineTo(bird.r-2, 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawPipe(p) {
+  ctx.fillStyle = '#5fbf3f';
+  ctx.strokeStyle = '#3f8f28';
+  ctx.lineWidth = 3;
+  // top pipe
+  ctx.fillRect(p.x, 0, pipeWidth, p.gapY);
+  ctx.strokeRect(p.x, 0, pipeWidth, p.gapY);
+  ctx.fillRect(p.x-4, p.gapY-24, pipeWidth+8, 24);
+  ctx.strokeRect(p.x-4, p.gapY-24, pipeWidth+8, 24);
+  // bottom pipe
+  const bottomY = p.gapY + gapSize;
+  ctx.fillRect(p.x, bottomY, pipeWidth, H - bottomY - 40);
+  ctx.strokeRect(p.x, bottomY, pipeWidth, H - bottomY - 40);
+  ctx.fillRect(p.x-4, bottomY, pipeWidth+8, 24);
+  ctx.strokeRect(p.x-4, bottomY, pipeWidth+8, 24);
+}
+
+function drawScore() {
+  ctx.fillStyle = '#fff';
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 3;
+  ctx.font = 'bold 40px Trebuchet MS, Arial';
+  ctx.textAlign = 'center';
+  ctx.strokeText(score, W/2, 70);
+  ctx.fillText(score, W/2, 70);
+}
+
+function drawStartScreen() {
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 34px Trebuchet MS, Arial';
+  ctx.fillText('Sky Hopper', W/2, H/2 - 90);
+  ctx.font = '18px Trebuchet MS, Arial';
+  ctx.fillText('Tap, click, or press Space', W/2, H/2 - 30);
+  ctx.fillText('to flap and fly through the gaps', W/2, H/2);
+  ctx.font = 'bold 20px Trebuchet MS, Arial';
+  ctx.fillText('Tap to Start', W/2, H/2 + 60);
+  ctx.font = '16px Trebuchet MS, Arial';
+  ctx.fillText('High Score: ' + highScore, W/2, H/2 + 100);
+}
+
+function drawGameOverScreen() {
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 36px Trebuchet MS, Arial';
+  ctx.fillText('Game Over', W/2, H/2 - 60);
+  ctx.font = 'bold 24px Trebuchet MS, Arial';
+  ctx.fillText('Score: ' + score, W/2, H/2 - 10);
+  ctx.font = '18px Trebuchet MS, Arial';
+  ctx.fillText('Best: ' + highScore, W/2, H/2 + 25);
+  ctx.font = 'bold 18px Trebuchet MS, Arial';
+  ctx.fillText('Tap to Play Again', W/2, H/2 + 80);
+}
+
+function circleRectCollide(cx, cy, r, rx, ry, rw, rh) {
+  const closestX = Math.max(rx, Math.min(cx, rx+rw));
+  const closestY = Math.max(ry, Math.min(cy, ry+rh));
+  const dx = cx - closestX, dy = cy - closestY;
+  return (dx*dx + dy*dy) < (r*r);
+}
+
+function update() {
+  frame++;
+  updateClouds();
+
+  if (state === 'playing') {
+    bird.vy += bird.gravity;
+    bird.y += bird.vy;
+    bird.rotation = Math.max(-0.5, Math.min(1.2, bird.vy * 0.08));
+
+    // spawn pipes
+    if (pipes.length === 0 || pipes[pipes.length-1].x < W - pipeSpacing) {
+      spawnPipe();
+    }
+
+    pipes.forEach(p => { p.x -= pipeSpeed; });
+    pipes = pipes.filter(p => p.x > -pipeWidth - 10);
+
+    // scoring + collision
+    pipes.forEach(p => {
+      if (!p.passed && p.x + pipeWidth < bird.x) {
+        p.passed = true;
+        score++;
+        if (score % 5 === 0) pipeSpeed += 0.15;
+      }
+      const topCollide = circleRectCollide(bird.x, bird.y, bird.r-2, p.x, 0, pipeWidth, p.gapY);
+      const bottomY = p.gapY + gapSize;
+      const bottomCollide = circleRectCollide(bird.x, bird.y, bird.r-2, p.x, bottomY, pipeWidth, H-bottomY-40);
+      if (topCollide || bottomCollide) endGame();
+    });
+
+    // ground / ceiling
+    if (bird.y + bird.r > H - 40) { bird.y = H - 40 - bird.r; endGame(); }
+    if (bird.y - bird.r < 0) { bird.y = bird.r; bird.vy = 0; }
+  }
+}
+
+function endGame() {
+  if (state !== 'playing') return;
+  state = 'over';
+  if (score > highScore) {
+    highScore = score;
+    try { localStorage.setItem('skyHopperHigh', String(highScore)); } catch(e) {}
+  }
+}
+
+function render() {
+  ctx.clearRect(0,0,W,H);
+  drawBackground();
+  if (state !== 'start') {
+    pipes.forEach(drawPipe);
+  }
+  drawGround();
+  drawBird();
+  if (state === 'playing') drawScore();
+  if (state === 'start') drawStartScreen();
+  if (state === 'over') { drawScore(); drawGameOverScreen(); }
+}
+
+function loop() {
+  update();
+  render();
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>
